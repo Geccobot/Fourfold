@@ -1,4 +1,5 @@
 
+
 import { resolveEffects } from "./effects";
 
 import type {
@@ -12,6 +13,7 @@ import type {
   PendingAction,
   Phase,
   PlayerId,
+  ResolutionEvent,
   RoundResult,
 } from "./types";
 
@@ -42,6 +44,7 @@ export function createGame(): GameState {
     round: 1,
     turn: 1,
     pendingActions: [],
+    lastTurnEvents: [],
   };
 }
 
@@ -83,16 +86,35 @@ function validateAction(
 }
 
 function completeTurn(state: GameState): GameState {
+  const revealEvents: ResolutionEvent[] = [];
+
+  const modules = state.modules.map((module) => ({
+    ...module,
+    creatures: module.creatures.map((creature) => {
+      if (!creature.revealed) {
+        revealEvents.push({
+          type: "creature-revealed",
+          turn: state.turn,
+          sourceCreatureId: creature.id,
+          moduleId: module.id,
+          message:
+            `${creature.name} was revealed ` +
+            `in Module ${module.id + 1}.`,
+        });
+      }
+
+      return {
+        ...creature,
+        revealed: true,
+      };
+    }),
+  }));
+
   const revealedState: GameState = {
     ...state,
     phase: "resolution",
-    modules: state.modules.map((module) => ({
-      ...module,
-      creatures: module.creatures.map((creature) => ({
-        ...creature,
-        revealed: true,
-      })),
-    })),
+    modules,
+    lastTurnEvents: revealEvents,
   };
 
   const resolvedState = resolveEffects(revealedState);

@@ -6,8 +6,8 @@ import type {
   GameState,
   Module,
   PendingAction,
-  PlayerId,
   QueuedEffect,
+  ResolutionEvent,
 } from "./types";
 
 const TIMING_ORDER = {
@@ -30,6 +30,9 @@ function cloneState(state: GameState): GameState {
       targets: action.targets
         ? { ...action.targets }
         : undefined,
+    })),
+    lastTurnEvents: state.lastTurnEvents.map((event) => ({
+      ...event,
     })),
   };
 }
@@ -116,6 +119,15 @@ export function resolveEffects(
   const next = cloneState(state);
   const queue = collectEffects(next);
 
+  function log(
+    event: Omit<ResolutionEvent, "turn">
+  ): void {
+    next.lastTurnEvents.push({
+      turn: next.turn,
+      ...event,
+    });
+  }
+
   for (const queued of queue) {
     const source = findCreature(
       next,
@@ -134,56 +146,130 @@ export function resolveEffects(
         ? findCreature(next, targetId)
         : null;
 
+      const baseEvent = {
+        sourceCreatureId: source.creature.id,
+        targetCreatureId: targetId,
+        timing: queued.timing,
+      };
+
       switch (action.type) {
         case "reduce-score": {
-          if (!target) break;
-          if (target.module.owner === queued.player) {
-            break;
-          }
-          if (target.module.protectedFromReduction) {
+          if (
+            !target ||
+            target.module.owner === queued.player
+          ) {
+            log({
+              ...baseEvent,
+              type: "effect-fizzled",
+              message:
+                `${source.creature.name}'s score reduction ` +
+                "had no valid enemy target.",
+            });
             break;
           }
 
-          const score =
+          if (target.module.protectedFromReduction) {
+            log({
+              ...baseEvent,
+              type: "score-reduction-blocked",
+              moduleId: target.module.id,
+              message:
+                `${target.creature.name} was protected ` +
+                `from ${source.creature.name}'s ` +
+                "score reduction.",
+            });
+            break;
+          }
+
+          const previousScore =
             target.creature.currentScore ??
             target.creature.baseScore;
 
-          target.creature.currentScore = Math.max(
+          const newScore = Math.max(
             0,
-            score - action.amount
+            previousScore - action.amount
           );
+
+          target.creature.currentScore = newScore;
+
+          log({
+            ...baseEvent,
+            type: "score-reduced",
+            moduleId: target.module.id,
+            previousScore,
+            newScore,
+            message:
+              `${source.creature.name} reduced ` +
+              `${target.creature.name}'s score ` +
+              `from ${previousScore} to ${newScore}.`,
+          });
           break;
         }
 
         case "reveal-creature": {
-          if (!target) break;
-          if (target.module.owner === queued.player) {
+          if (
+            !target ||
+            target.module.owner === queued.player
+          ) {
+            log({
+              ...baseEvent,
+              type: "effect-fizzled",
+              message:
+                `${source.creature.name}'s reveal ` +
+                "had no valid enemy target.",
+            });
+            break;
+          }
+
+          if (target.creature.revealed) {
+            log({
+              ...baseEvent,
+              type: "effect-fizzled",
+              message:
+                `${target.creature.name} was already revealed.`,
+            });
             break;
           }
 
           target.creature.revealed = true;
+
+          log({
+            ...baseEvent,
+            type: "creature-revealed",
+            moduleId: target.module.id,
+            message:
+              `${source.creature.name} revealed ` +
+              `${target.creature.name}.`,
+          });
           break;
         }
 
         case "move-creature": {
-          if (!target) break;
-          if (target.module.owner !== queued.player) {
-            break;
-          }
-
           const destination = next.modules.find(
             (module) =>
               module.id ===
               queued.targets.destinationModuleId
           );
 
-          if (!destination) break;
-          if (destination.owner !== queued.player) {
+          if (
+            !target ||
+            target.module.owner !== queued.player ||
+            !destination ||
+            destination.owner !== queued.player ||
+            destination.id === target.module.id
+          ) {
+            log({
+              ...baseEvent,
+              type: "effect-fizzled",
+              message:
+                `${source.creature.name}'s movement ` +
+                "had no valid destination or target.",
+            });
             break;
           }
-          if (destination.id === target.module.id) {
-            break;
-          }
+
+          const fromModuleId = target.module.id;
+          const toModuleId = destination.id;
 
           target.module.creatures =
             target.module.creatures.filter(
@@ -192,11 +278,33 @@ export function resolveEffects(
             );
 
           destination.creatures.push(target.creature);
+
+          log({
+            ...baseEvent,
+            type: "creature-moved",
+            fromModuleId,
+            toModuleId,
+            message:
+              `${source.creature.name} moved ` +
+              `${target.creature.name} from ` +
+              `Module ${fromModuleId + 1} to ` +
+              `Module ${toModuleId + 1}.`,
+          });
           break;
         }
 
         case "protect-module": {
           source.module.protectedFromReduction = true;
+
+          log({
+            ...baseEvent,
+            type: "module-protected",
+            moduleId: source.module.id,
+            message:
+              `${source.creature.name} protected ` +
+              `Module ${source.module.id + 1} ` +
+              "from score reduction.",
+          });
           break;
         }
       }

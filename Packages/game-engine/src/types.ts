@@ -69,6 +69,28 @@ export interface PendingAction {
   targets?: EffectTargets;
 }
 
+export type ResolutionEventType =
+  | "creature-revealed"
+  | "score-reduced"
+  | "score-reduction-blocked"
+  | "creature-moved"
+  | "module-protected"
+  | "effect-fizzled";
+
+export interface ResolutionEvent {
+  type: ResolutionEventType;
+  turn: number;
+  message: string;
+  sourceCreatureId?: string;
+  targetCreatureId?: string;
+  moduleId?: number;
+  fromModuleId?: number;
+  toModuleId?: number;
+  previousScore?: number;
+  newScore?: number;
+  timing?: EffectTiming;
+}
+
 export interface GameState {
   modules: Module[];
   activePlayer: PlayerId;
@@ -76,6 +98,7 @@ export interface GameState {
   round: number;
   turn: number;
   pendingActions: PendingAction[];
+  lastTurnEvents: ResolutionEvent[];
 }
 
 export interface LaneScores {
