@@ -11,6 +11,11 @@ export type Phase =
   | "resolution"
   | "turn-end";
 
+export type ActionPhase =
+  | "primary-action"
+  | "first-response"
+  | "final-response";
+
 export interface Creature {
   id: string;
   name: string;
@@ -25,11 +30,21 @@ export interface Module {
   creatures: Creature[];
 }
 
+export interface PendingAction {
+  player: PlayerId;
+  phase: ActionPhase;
+  type: "place-creature" | "pass";
+  cardId?: string;
+  moduleId?: number;
+}
+
 export interface GameState {
   modules: Module[];
   activePlayer: PlayerId;
   phase: Phase;
   round: number;
+  turn: number;
+  pendingActions: PendingAction[];
 }
 
 export interface LaneScores {
