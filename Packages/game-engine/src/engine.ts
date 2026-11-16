@@ -1,16 +1,22 @@
 
-
 import type {
+  ActionPhase,
   Creature,
   GameState,
   LaneResult,
   LaneScores,
   Module,
+  PendingAction,
+  Phase,
   PlayerId,
   RoundResult,
-} from "./types.ts";
+} from "./types";
 
 export const LANE_COUNT = 3;
+
+export function getOpponent(player: PlayerId): PlayerId {
+  return player === "player1" ? "player2" : "player1";
+}
 
 export function createGame(): GameState {
   const modules: Module[] = Array.from(
@@ -27,7 +33,104 @@ export function createGame(): GameState {
     activePlayer: "player1",
     phase: "primary-action",
     round: 1,
+    turn: 1,
+    pendingActions: [],
   };
+}
+
+export function getCurrentActor(
+  state: GameState
+): PlayerId | null {
+  switch (state.phase) {
+    case "primary-action":
+    case "final-response":
+      return state.activePlayer;
+
+    case "first-response":
+      return getOpponent(state.activePlayer);
+
+    default:
+      return null;
+  }
+}
+
+function validateAction(
+  state: GameState,
+  player: PlayerId
+): ActionPhase {
+  const actor = getCurrentActor(state);
+
+  if (actor === null) {
+    throw new Error("No player can act during this phase.");
+  }
+
+  if (actor !== player) {
+    throw new Error("Not this player's action window.");
+  }
+
+  return state.phase as ActionPhase;
+}
+
+function completeTurn(state: GameState): GameState {
+  const modules = state.modules.map((module) => ({
+    ...module,
+    creatures: module.creatures.map((creature) => ({
+      ...creature,
+      revealed: true,
+    })),
+  }));
+
+  return {
+    ...state,
+    modules,
+    activePlayer: getOpponent(state.activePlayer),
+    phase: "primary-action",
+    turn: state.turn + 1,
+    pendingActions: [],
+  };
+}
+
+function advancePhase(state: GameState): GameState {
+  let nextPhase: Phase;
+
+  switch (state.phase) {
+    case "primary-action":
+      nextPhase = "first-response";
+      break;
+
+    case "first-response":
+      nextPhase = "final-response";
+      break;
+
+    case "final-response":
+      return completeTurn(state);
+
+    default:
+      throw new Error("Cannot advance this phase manually.");
+  }
+
+  return {
+    ...state,
+    phase: nextPhase,
+  };
+}
+
+export function passAction(
+  state: GameState,
+  player: PlayerId
+): GameState {
+  const phase = validateAction(state, player);
+
+  const action: PendingAction = {
+    player,
+    phase,
+    type: "pass",
+  };
+
+  return advancePhase({
+    ...state,
+    pendingActions: [...state.pendingActions, action],
+  });
 }
 
 export function placeCreature(
@@ -36,13 +139,7 @@ export function placeCreature(
   moduleId: number,
   creature: Creature
 ): GameState {
-  if (state.activePlayer !== player) {
-    throw new Error("Not this player's turn.");
-  }
-
-  if (state.phase !== "primary-action") {
-    throw new Error("Cannot place a creature now.");
-  }
+  const phase = validateAction(state, player);
 
   const module = state.modules.find(
     (m) => m.id === moduleId
@@ -64,7 +161,15 @@ export function placeCreature(
     throw new Error("Creature is already in play.");
   }
 
-  return {
+  const action: PendingAction = {
+    player,
+    phase,
+    type: "place-creature",
+    cardId: creature.id,
+    moduleId,
+  };
+
+  return advancePhase({
     ...state,
     modules: state.modules.map((m) =>
       m.id === moduleId
@@ -77,8 +182,8 @@ export function placeCreature(
           }
         : m
     ),
-    phase: "first-response",
-  };
+    pendingActions: [...state.pendingActions, action],
+  });
 }
 
 export function getModuleScore(module: Module): number {
