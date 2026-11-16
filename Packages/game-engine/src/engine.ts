@@ -1,7 +1,10 @@
 
+import { resolveEffects } from "./effects";
+
 import type {
   ActionPhase,
   Creature,
+  EffectTargets,
   GameState,
   LaneResult,
   LaneScores,
@@ -23,8 +26,12 @@ export function createGame(): GameState {
     { length: LANE_COUNT * 2 },
     (_, index) => ({
       id: index,
-      owner: index < LANE_COUNT ? "player1" : "player2",
+      owner:
+        index < LANE_COUNT
+          ? "player1"
+          : "player2",
       creatures: [],
+      protectedFromReduction: false,
     })
   );
 
@@ -61,28 +68,37 @@ function validateAction(
   const actor = getCurrentActor(state);
 
   if (actor === null) {
-    throw new Error("No player can act during this phase.");
+    throw new Error(
+      "No player can act during this phase."
+    );
   }
 
   if (actor !== player) {
-    throw new Error("Not this player's action window.");
+    throw new Error(
+      "Not this player's action window."
+    );
   }
 
   return state.phase as ActionPhase;
 }
 
 function completeTurn(state: GameState): GameState {
-  const modules = state.modules.map((module) => ({
-    ...module,
-    creatures: module.creatures.map((creature) => ({
-      ...creature,
-      revealed: true,
+  const revealedState: GameState = {
+    ...state,
+    phase: "resolution",
+    modules: state.modules.map((module) => ({
+      ...module,
+      creatures: module.creatures.map((creature) => ({
+        ...creature,
+        revealed: true,
+      })),
     })),
-  }));
+  };
+
+  const resolvedState = resolveEffects(revealedState);
 
   return {
-    ...state,
-    modules,
+    ...resolvedState,
     activePlayer: getOpponent(state.activePlayer),
     phase: "primary-action",
     turn: state.turn + 1,
@@ -106,7 +122,9 @@ function advancePhase(state: GameState): GameState {
       return completeTurn(state);
 
     default:
-      throw new Error("Cannot advance this phase manually.");
+      throw new Error(
+        "Cannot advance this phase manually."
+      );
   }
 
   return {
@@ -129,7 +147,10 @@ export function passAction(
 
   return advancePhase({
     ...state,
-    pendingActions: [...state.pendingActions, action],
+    pendingActions: [
+      ...state.pendingActions,
+      action,
+    ],
   });
 }
 
@@ -137,12 +158,13 @@ export function placeCreature(
   state: GameState,
   player: PlayerId,
   moduleId: number,
-  creature: Creature
+  creature: Creature,
+  targets: EffectTargets = {}
 ): GameState {
   const phase = validateAction(state, player);
 
   const module = state.modules.find(
-    (m) => m.id === moduleId
+    (item) => item.id === moduleId
   );
 
   if (!module) {
@@ -150,15 +172,21 @@ export function placeCreature(
   }
 
   if (module.owner !== player) {
-    throw new Error("Cannot place in opponent module.");
+    throw new Error(
+      "Cannot place in opponent module."
+    );
   }
 
   if (
-    state.modules.some((m) =>
-      m.creatures.some((c) => c.id === creature.id)
+    state.modules.some((item) =>
+      item.creatures.some(
+        (existing) => existing.id === creature.id
+      )
     )
   ) {
-    throw new Error("Creature is already in play.");
+    throw new Error(
+      "Creature is already in play."
+    );
   }
 
   const action: PendingAction = {
@@ -167,29 +195,45 @@ export function placeCreature(
     type: "place-creature",
     cardId: creature.id,
     moduleId,
+    targets: { ...targets },
   };
 
   return advancePhase({
     ...state,
-    modules: state.modules.map((m) =>
-      m.id === moduleId
+    modules: state.modules.map((item) =>
+      item.id === moduleId
         ? {
-            ...m,
+            ...item,
             creatures: [
-              ...m.creatures,
-              { ...creature, revealed: false },
+              ...item.creatures,
+              {
+                ...creature,
+                currentScore:
+                  creature.currentScore ??
+                  creature.baseScore,
+                revealed: false,
+              },
             ],
           }
-        : m
+        : item
     ),
-    pendingActions: [...state.pendingActions, action],
+    pendingActions: [
+      ...state.pendingActions,
+      action,
+    ],
   });
 }
 
-export function getModuleScore(module: Module): number {
+export function getModuleScore(
+  module: Module
+): number {
   return module.creatures.reduce(
     (total, creature) =>
-      total + (creature.revealed ? creature.baseScore : 0),
+      total +
+      (creature.revealed
+        ? creature.currentScore ??
+          creature.baseScore
+        : 0),
     0
   );
 }
@@ -197,7 +241,10 @@ export function getModuleScore(module: Module): number {
 export function getLaneModules(
   state: GameState,
   laneId: number
-): { player1: Module; player2: Module } {
+): {
+  player1: Module;
+  player2: Module;
+} {
   if (
     !Number.isInteger(laneId) ||
     laneId < 0 ||
@@ -219,7 +266,9 @@ export function getLaneModules(
   );
 
   if (!player1 || !player2) {
-    throw new Error("Lane modules are missing.");
+    throw new Error(
+      "Lane modules are missing."
+    );
   }
 
   return { player1, player2 };
@@ -229,10 +278,8 @@ export function getLaneScores(
   state: GameState,
   laneId: number
 ): LaneScores {
-  const { player1, player2 } = getLaneModules(
-    state,
-    laneId
-  );
+  const { player1, player2 } =
+    getLaneModules(state, laneId);
 
   return {
     player1: getModuleScore(player1),

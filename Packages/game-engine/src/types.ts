@@ -16,11 +16,35 @@ export type ActionPhase =
   | "first-response"
   | "final-response";
 
-export interface Creature {
+export type EffectTiming = "priority" | "normal" | "delayed";
+
+export type EffectAction =
+  | { type: "reduce-score"; amount: number }
+  | { type: "reveal-creature" }
+  | { type: "move-creature" }
+  | { type: "protect-module" };
+
+export interface CardEffect {
+  trigger: "onReveal";
+  timing?: EffectTiming;
+  actions: EffectAction[];
+}
+
+export interface CardDefinition {
   id: string;
   name: string;
   element: Element;
   baseScore: number;
+  effects: CardEffect[];
+}
+
+export interface Creature {
+  id: string;
+  cardId?: string;
+  name: string;
+  element: Element;
+  baseScore: number;
+  currentScore?: number;
   revealed: boolean;
 }
 
@@ -28,6 +52,12 @@ export interface Module {
   id: number;
   owner: PlayerId;
   creatures: Creature[];
+  protectedFromReduction?: boolean;
+}
+
+export interface EffectTargets {
+  targetCreatureId?: string;
+  destinationModuleId?: number;
 }
 
 export interface PendingAction {
@@ -36,6 +66,7 @@ export interface PendingAction {
   type: "place-creature" | "pass";
   cardId?: string;
   moduleId?: number;
+  targets?: EffectTargets;
 }
 
 export interface GameState {
@@ -65,4 +96,14 @@ export interface RoundResult {
     player2: number;
   };
   winner: PlayerId | null;
+}
+
+export interface QueuedEffect {
+  sourceCreatureId: string;
+  player: PlayerId;
+  playOrder: number;
+  effectIndex: number;
+  timing: EffectTiming;
+  effect: CardEffect;
+  targets: EffectTargets;
 }
