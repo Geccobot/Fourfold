@@ -1,0 +1,26 @@
+{
+  "name": "fourfold",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "Packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @fourfold/web",
+    "build": "npm run build --workspace @fourfold/web",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.4",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^5.1.0"
+  }
+}
