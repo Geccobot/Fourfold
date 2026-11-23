@@ -1,3 +1,4 @@
+
 node_modules/
 dist/
 coverage/
@@ -5,3 +6,25 @@ coverage/
 .env
 .env.*
 !.env.example
+
+
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Operating system
+.DS_Store
+
